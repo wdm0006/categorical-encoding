@@ -161,7 +161,7 @@ class LeaveOneOutEncoder( util.SupervisedTransformerMixin,util.BaseEncoder):
     def transform_leave_one_out(self, X: pd.DataFrame, y: pd.Series | None, mapping=None):
         """Apply leave-one-out-encoding to a dataframe.
 
-        If a target is given the lable-mean is calculated without the target (left out).
+        If a target is given the label-mean is calculated without the target (left out).
         Otherwise, the label mean from the fit step is taken.
         """
         random_state_ = check_random_state(self.random_state)
@@ -184,7 +184,7 @@ class LeaveOneOutEncoder( util.SupervisedTransformerMixin,util.BaseEncoder):
                 X[col] = X[col].astype(index_dtype)
 
             if self.handle_unknown == 'error' and is_unknown_value.any():
-                raise ValueError('Columns to be encoded can not contain new values')
+                raise ValueError('Columns to be encoded cannot contain new values')
 
             if (
                 y is None

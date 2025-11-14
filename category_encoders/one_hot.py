@@ -40,7 +40,7 @@ class OneHotEncoder( util.UnsupervisedTransformerMixin,util.BaseEncoder):
     handle_missing: str
         options are 'error', 'return_nan', 'value', and 'indicator'. The default is 'value'.
 
-        'error' will raise a `ValueError` if missings are encountered.
+        'error' will raise a `ValueError` if a missing value is encountered.
         'return_nan' will encode a missing value as `np.nan` in every dummy column.
         'value' will encode a missing value as 0 in every dummy column.
         'indicator' will treat missingness as its own category, adding an additional dummy column
@@ -227,7 +227,7 @@ class OneHotEncoder( util.UnsupervisedTransformerMixin,util.BaseEncoder):
 
         if self.handle_unknown == 'error':
             if X[self.cols].isin([-1]).any().any():
-                raise ValueError('Columns to be encoded can not contain new values')
+                raise ValueError('Columns to be encoded cannot contain new values')
 
         X = self.get_dummies(X)
         return X

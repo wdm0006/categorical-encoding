@@ -3,7 +3,7 @@ title: 'Category Encoders: a scikit-learn-contrib package of transformers for en
 tags:
   - machine learning
   - python
-  - sckit-learn
+  - scikit-learn
 authors:
  - name: William D McGinnis
    orcid: 0000-0002-3009-9465
@@ -45,7 +45,7 @@ Categorical: Georgia, Alabama, South Carolina, … , New York
 
 The machine learning algorithms we will later use tend to want numbers, and not strings, as their inputs so we need some method of coding to convert them.
 
-Category_encoders includes a number of pre-existing encoders that are commonly used, notably Ordinal, Hashing and OneHot encoders [@idre][@carey][@hashing]. There are also some
+Category_encoders includes a number of preexisting encoders that are commonly used, notably Ordinal, Hashing and OneHot encoders [@idre][@carey][@hashing]. There are also some
 less frequently used encoders including Backward Difference, Helmert, Polynomial and Sum encoding [@idre][@carey]. Finally there are
 experimental encoders: LeaveOneOut, Binary and BaseN [@zhang][@onehot][@basen].
 

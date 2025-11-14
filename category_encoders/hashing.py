@@ -228,11 +228,11 @@ class HashingEncoder( util.UnsupervisedTransformerMixin,util.BaseEncoder):
             for val in row:
                 if val is not None:
                     hasher = hasher_constructor()
-                    # Computes an integer index from the hasher digest. The endian is
-                    # "big" as the code use to read:
+                    # Computes an integer index from the hasher digest. The endianness is
+                    # "big" as the code used to read:
                     # column_index = int(hasher.hexdigest(), 16) % N
-                    # which is implicitly considering the hexdigest to be big endian,
-                    # even if the system is little endian.
+                    # which is implicitly considering the hexdigest to be big-endian,
+                    # even if the system is little-endian.
                     # Building the index that way is about 30% faster than using the
                     # hexdigest.
                     hasher.update(bytes(str(val), 'utf-8'))

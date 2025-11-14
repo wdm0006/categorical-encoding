@@ -100,7 +100,7 @@ class BaseContrastEncoder(util.UnsupervisedTransformerMixin, util.BaseEncoder):
         X = self.ordinal_encoder.transform(X)
         if self.handle_unknown == 'error':
             if X[self.cols].isin([-1]).any().any():
-                raise ValueError('Columns to be encoded can not contain new values')
+                raise ValueError('Columns to be encoded cannot contain new values')
 
         X = self.transform_contrast_coding(X, mapping=self.mapping)
         return X
@@ -124,7 +124,7 @@ class BaseContrastEncoder(util.UnsupervisedTransformerMixin, util.BaseEncoder):
         handle_missing: str
             How to handle missing values.
         handle_unknown: str
-            How to hande unkown values.
+            How to handle unknown values.
 
         Returns
         -------
