@@ -27,9 +27,9 @@ authors:
    orcid: TODO
    affiliation: 8
 affiliations:
- - name: Predikto, Inc.
+ - name: Scale Venture Partners
    index: 1
- - name: Helton Tech, LLC
+ - name: Helton Labs, LLC
    index: 2
  - name: Suncorp Group Ltd.
    index: 3
