@@ -23,8 +23,8 @@ authors:
  - name: Paul Westenthanner
    orcid: TODO
    affiliation: 7
- - name: J. Castaldo
-   orcid: TODO
+ - name: Jonathan Castaldo
+   orcid: 0009-0001-2553-5920
    affiliation: 8
 affiliations:
  - name: Scale Venture Partners
@@ -41,7 +41,7 @@ affiliations:
    index: 6
  - name: Independent
    index: 7
- - name: TODO
+ - name: Meta, Inc.
    index: 8
 date: 5 December 2017
 bibliography: paper.bib
