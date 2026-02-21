@@ -20,8 +20,8 @@ authors:
  - name: Jan Motl
    orcid: TODO
    affiliation: 6
- - name: Paul Westenthanner
-   orcid: TODO
+ - name: Kaspar Paul Westenthanner
+   orcid: 0009-0007-4284-3953
    affiliation: 7
  - name: Jonathan Castaldo
    orcid: 0009-0001-2553-5920
@@ -39,7 +39,7 @@ affiliations:
    index: 5
  - name: Czech Technical University in Prague
    index: 6
- - name: Independent
+ - name: Atruvia
    index: 7
  - name: Meta, Inc.
    index: 8
