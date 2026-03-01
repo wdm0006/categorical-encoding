@@ -18,7 +18,7 @@ authors:
    orcid:  0000-0001-8503-1014
    affiliation: 5
  - name: Jan Motl
-   orcid: TODO
+   orcid: 0000-0002-0388-3190
    affiliation: 6
  - name: Kaspar Paul Westenthanner
    orcid: 0009-0007-4284-3953
