@@ -18,7 +18,6 @@ import time
 
 import numpy as np
 import pandas as pd
-
 from category_encoders import OrdinalEncoder, WOEEncoder
 
 SHAPES = [
@@ -33,7 +32,9 @@ REPEATS = 3
 def make_data(rows: int, cols: int, card: int, seed: int = 0):
     """Build a synthetic wide-category frame plus a binary target."""
     rng = np.random.default_rng(seed)
-    X = pd.DataFrame({f'c{i}': pd.Categorical(rng.integers(0, card, rows).astype(str)) for i in range(cols)})
+    X = pd.DataFrame(
+        {f'c{i}': pd.Categorical(rng.integers(0, card, rows).astype(str)) for i in range(cols)}
+    )
     X.iloc[::1000, 0] = np.nan  # some missing values
     y = pd.Series(rng.integers(0, 2, rows), index=X.index)
     return X, y
@@ -89,7 +90,9 @@ def bench_shape(rows: int, cols: int, card: int, workers_list: list, repeats: in
         else:
             run['parity'] = bool(out.equals(ref_out))
 
-        entry['runs'][f'max_process={workers}'] = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in run.items()}
+        entry['runs'][f'max_process={workers}'] = {
+            k: (round(v, 4) if isinstance(v, float) else v) for k, v in run.items()
+        }
 
     base = entry['runs'][f'max_process={workers_list[0]}']
     for _, run in entry['runs'].items():
@@ -102,7 +105,7 @@ def bench_shape(rows: int, cols: int, card: int, workers_list: list, repeats: in
 def main():
     """Run the benchmark matrix and write the JSON results + gate verdict."""
     ap = argparse.ArgumentParser()
-    ap.add_argument('--quick', action='store_true', help='run the control + representative shapes only')
+    ap.add_argument('--quick', action='store_true', help='run the control + representative shapes only')  # noqa: E501
     args = ap.parse_args()
 
     shapes = SHAPES[:2] if args.quick else SHAPES
@@ -121,15 +124,18 @@ def main():
 
     for shape_name, rows, cols, card in shapes:
         workers_list = [1, 2, 4, 8] if 'representative' in shape_name else [1, 4]
-        print(f'=== {shape_name}: {rows} rows x {cols} cols x {card} cats, workers={workers_list} ===', flush=True)
+        print(
+            f'=== {shape_name}: {rows} rows, {cols} cols, {card} cats, workers={workers_list} ===',
+            flush=True,
+        )
         entry = bench_shape(rows, cols, card, workers_list, REPEATS)
         entry['name'] = shape_name
         results['shapes'].append(entry)
         for wname, run in entry['runs'].items():
             print(
-                f"  {wname}: fit={run['fit_s']:>8.3f}s (x{run['fit_speedup']:<5}) "
-                f"transform={run['transform_s']:>8.3f}s (x{run['transform_speedup']:<5}) "
-                f"fit_transform={run['fit_transform_s']:>8.3f}s (x{run['fit_transform_speedup']:<5}) "
+                f"  {wname}: fit={run['fit_s']:>8.3f}s (x{run['fit_speedup']}) "
+                f"transform={run['transform_s']:>8.3f}s (x{run['transform_speedup']}) "
+                f"fit_transform={run['fit_transform_s']:>8.3f}s (x{run['fit_transform_speedup']}) "
                 f"parity={run['parity']}",
                 flush=True,
             )
