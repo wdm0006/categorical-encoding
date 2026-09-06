@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import multiprocessing
+import platform
+from concurrent.futures import ProcessPoolExecutor
+from contextlib import contextmanager
+
 import numpy as np
 import pandas as pd
 from sklearn.utils.random import check_random_state
@@ -10,6 +15,111 @@ import category_encoders.utils as util
 from category_encoders.ordinal import OrdinalEncoder
 
 __author__ = 'Jan Motl'
+
+
+# Worker-process state for the parallel paths. Under the fork start method the
+# parent publishes it before the pool forks and workers inherit it copy-on-write;
+# other start methods fill it via the pool initializer in each worker process.
+_WORKER_STATE: dict = {}
+
+
+def _woe_for_column(
+    x_col: pd.Series,
+    y: pd.Series,
+    col_sum: float,
+    col_count: float,
+    regularization: float,
+    handle_unknown: str,
+    handle_missing: str,
+    ordinal_values: pd.Series | None = None,
+) -> pd.Series:
+    """Compute the regularized WOE mapping for one column.
+
+    Pure helper shared by the serial and parallel paths so the two can never
+    drift apart.
+    """
+    # Calculate sum and count of the target for each unique value in the feature col
+    stats = y.groupby(x_col).agg(['sum', 'count'])  # Count of x_{i,+} and x_i
+
+    # Create a new column with regularized WOE.
+    # Regularization helps to avoid division by zero.
+    # Pre-calculate WOEs because logarithms are slow.
+    nominator = (stats['sum'] + regularization) / (col_sum + 2 * regularization)
+    denominator = ((stats['count'] - stats['sum']) + regularization) / (
+        col_count - col_sum + 2 * regularization
+    )
+    woe = np.log(nominator / denominator)
+
+    # Ignore unique values. This helps to prevent overfitting on id-like columns.
+    woe[stats['count'] == 1] = 0
+
+    if handle_unknown == 'return_nan':
+        woe.loc[-1] = np.nan
+    elif handle_unknown == 'value':
+        woe.loc[-1] = 0
+
+    if handle_missing == 'return_nan':
+        woe.loc[ordinal_values.loc[np.nan]] = np.nan
+    elif handle_missing == 'value':
+        woe.loc[-2] = 0
+
+    return woe
+
+
+def _init_train_worker(
+    X: pd.DataFrame,
+    y: pd.Series,
+    col_sum: float,
+    col_count: float,
+    regularization: float,
+    handle_unknown: str,
+    handle_missing: str,
+) -> None:
+    """Pool initializer: publish the shared fit inputs in the worker process."""
+    _WORKER_STATE['X'] = X
+    _WORKER_STATE['y'] = y
+    _WORKER_STATE['col_sum'] = col_sum
+    _WORKER_STATE['col_count'] = col_count
+    _WORKER_STATE['regularization'] = regularization
+    _WORKER_STATE['handle_unknown'] = handle_unknown
+    _WORKER_STATE['handle_missing'] = handle_missing
+
+
+def _train_column(switch: dict) -> tuple:
+    """Worker task: WOE mapping for a single column."""
+    col = switch.get('col')
+    woe = _woe_for_column(
+        _WORKER_STATE['X'][col],
+        _WORKER_STATE['y'],
+        _WORKER_STATE['col_sum'],
+        _WORKER_STATE['col_count'],
+        _WORKER_STATE['regularization'],
+        _WORKER_STATE['handle_unknown'],
+        _WORKER_STATE['handle_missing'],
+        ordinal_values=switch.get('mapping'),
+    )
+    return col, woe
+
+
+def _init_score_worker(X: pd.DataFrame, mapping: dict) -> None:
+    """Pool initializer: publish the shared transform inputs in the worker process."""
+    _WORKER_STATE['X'] = X
+    _WORKER_STATE['mapping'] = mapping
+
+
+def _score_column(col: str) -> pd.Series:
+    """Worker task: WOE-scored version of a single column."""
+    return _WORKER_STATE['X'][col].map(_WORKER_STATE['mapping'][col])
+
+
+@contextmanager
+def _published_worker_state(state: dict):
+    """Publish worker state on the module global for fork-inherited workers."""
+    _WORKER_STATE.update(state)
+    try:
+        yield
+    finally:
+        _WORKER_STATE.clear()
 
 
 class WOEEncoder( util.SupervisedTransformerMixin,util.BaseEncoder):
@@ -42,6 +152,17 @@ class WOEEncoder( util.SupervisedTransformerMixin,util.BaseEncoder):
     regularization: float
         the purpose of regularization is mostly to prevent division by zero.
         When regularization is 0, you may encounter division by zero.
+    max_process: int
+        how many processes to use for the per-column fit and transform loops.
+        1 (the default) runs serially and preserves the historical behavior.
+        Parallelism engages only when more than one column is encoded.
+        Values are clamped to range(1, 128).
+    process_creation_method: string
+        either "fork", "spawn" or "forkserver" (availability depends on your
+        platform). See https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
+        for more details and tradeoffs. Defaults to "fork" on linux/macos as it
+        is the fastest option and to "spawn" on windows as it is the only one
+        available.
 
     Example
     -------
@@ -102,6 +223,8 @@ class WOEEncoder( util.SupervisedTransformerMixin,util.BaseEncoder):
         randomized=False,
         sigma=0.05,
         regularization=1.0,
+        max_process=1,
+        process_creation_method='fork',
     ):
         super().__init__(
             verbose=verbose,
@@ -118,6 +241,11 @@ class WOEEncoder( util.SupervisedTransformerMixin,util.BaseEncoder):
         self.randomized = randomized
         self.sigma = sigma
         self.regularization = regularization
+        self.max_process = min(max(max_process, 1), 128)
+        if platform.system() == 'Windows':
+            self.process_creation_method = 'spawn'
+        else:
+            self.process_creation_method = process_creation_method
 
     def _fit(self, X, y, **kwargs):
         # The label must be binary with values {0,1}
@@ -172,40 +300,77 @@ class WOEEncoder( util.SupervisedTransformerMixin,util.BaseEncoder):
         self._sum = y.sum()
         self._count = y.count()
 
+        if self.max_process > 1 and len(self.cols) > 1:
+            return self._train_parallel(X, y)
+
         for switch in self.ordinal_encoder.category_mapping:
             col = switch.get('col')
             values = switch.get('mapping')
-            # Calculate sum and count of the target for each unique value in the feature col
-            stats = y.groupby(X[col]).agg(['sum', 'count'])  # Count of x_{i,+} and x_i
-
-            # Create a new column with regularized WOE.
-            # Regularization helps to avoid division by zero.
-            # Pre-calculate WOEs because logarithms are slow.
-            nominator = (stats['sum'] + self.regularization) / (self._sum + 2 * self.regularization)
-            denominator = ((stats['count'] - stats['sum']) + self.regularization) / (
-                self._count - self._sum + 2 * self.regularization
+            mapping[col] = _woe_for_column(
+                X[col],
+                y,
+                self._sum,
+                self._count,
+                self.regularization,
+                self.handle_unknown,
+                self.handle_missing,
+                ordinal_values=values,
             )
-            woe = np.log(nominator / denominator)
-
-            # Ignore unique values. This helps to prevent overfitting on id-like columns.
-            woe[stats['count'] == 1] = 0
-
-            if self.handle_unknown == 'return_nan':
-                woe.loc[-1] = np.nan
-            elif self.handle_unknown == 'value':
-                woe.loc[-1] = 0
-
-            if self.handle_missing == 'return_nan':
-                woe.loc[values.loc[np.nan]] = np.nan
-            elif self.handle_missing == 'value':
-                woe.loc[-2] = 0
-
-            # Store WOE for transform() function
-            mapping[col] = woe
 
         return mapping
 
+    def _train_parallel(self, X, y):
+        """Train the per-column WOE mappings across worker processes."""
+        state = {
+            'X': X,
+            'y': y,
+            'col_sum': self._sum,
+            'col_count': self._count,
+            'regularization': self.regularization,
+            'handle_unknown': self.handle_unknown,
+            'handle_missing': self.handle_missing,
+        }
+        with self._worker_pool(_init_train_worker, state) as executor:
+            # executor.map yields results in submission order, so the mapping
+            # keys come out in self.cols order exactly as in the serial path.
+            return dict(executor.map(_train_column, self.ordinal_encoder.category_mapping))
+
+    def _score_parallel(self, X):
+        """Score the columns across worker processes."""
+        with self._worker_pool(_init_score_worker, {'X': X, 'mapping': self.mapping}) as executor:
+            for col, scored in zip(self.cols, executor.map(_score_column, self.cols), strict=True):
+                X[col] = scored
+        return X
+
+    @contextmanager
+    def _worker_pool(self, initializer, state):
+        """Yield a ProcessPoolExecutor with ``state`` available to the workers.
+
+        Under the fork start method the state is published on the module-level
+        ``_WORKER_STATE`` and inherited copy-on-write, so the large frames are
+        never pickled. Every other start method falls back to initializer
+        pickling, which copies the state once per worker.
+        """
+        ctx = multiprocessing.get_context(self.process_creation_method)
+        if ctx.get_start_method() == 'fork':
+            with _published_worker_state(state):
+                with ProcessPoolExecutor(max_workers=self.max_process, mp_context=ctx) as executor:
+                    yield executor
+        else:
+            with ProcessPoolExecutor(
+                max_workers=self.max_process,
+                mp_context=ctx,
+                initializer=initializer,
+                initargs=tuple(state.values()),
+            ) as executor:
+                yield executor
+
     def _score(self, X, y):
+        # Randomized scoring must draw the noise serially to preserve the random
+        # draw order, so the parallel path is only used without randomization.
+        if self.max_process > 1 and len(self.cols) > 1 and not (self.randomized and y is not None):
+            return self._score_parallel(X)
+
         for col in self.cols:
             # Score the column
             X[col] = X[col].map(self.mapping[col])
