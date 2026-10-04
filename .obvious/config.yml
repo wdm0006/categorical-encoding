@@ -1,0 +1,8 @@
+# Obvious repo policy — wdm0006/categorical-encoding
+# Auto-detected from GitHub repo settings on 2026-09-05:
+# default branch: master; merge, squash, and rebase all enabled on GitHub.
+defaultBranch: master
+branches:
+  - master
+mergeMethod: squash
+requireHumanMerge: true
